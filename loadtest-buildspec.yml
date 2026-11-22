@@ -1,0 +1,44 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      java: corretto17
+    commands:
+      - echo "Installing JMeter and dependencies..."
+      - wget https://archive.apache.org/dist/jmeter/binaries/apache-jmeter-5.5.tgz
+      - tar -xzf apache-jmeter-5.5.tgz
+      - sudo yum update -y && sudo yum install -y lsof  # Install lsof for post-build
+      - echo "Adding JMeter to PATH"
+      - export JMETER_HOME=$(pwd)/apache-jmeter-5.5
+      - echo "export PATH=$JMETER_HOME/bin:$PATH" >> ~/.bashrc
+      - source ~/.bashrc
+  pre_build:
+    commands:
+      - echo "Preparing load tests..."
+      - mvn package -DskipTests
+      - nohup java -jar target/sample-app.jar &
+      - sleep 10
+  build:
+    commands:
+      - echo "Running load tests..."
+      - $JMETER_HOME/bin/jmeter -n -t load-tests/test-plan.jmx -l results.jtl -e -o report
+      - echo "Evaluating performance thresholds..."
+      - python3 load-tests/evaluate_performance.py results.jtl
+  post_build:
+    commands:
+      - echo "Load tests completed on $(date)"
+      - pkill -f 'java -jar target/sample-app.jar' || echo "App not running"
+
+reports:
+  jmeter-reports:
+    files:
+      - 'report/**/*'
+    base-directory: '.'
+    file-format: 'JMETERHTML'
+
+artifacts:
+  files:
+    - 'report/**/*'
+    - 'results.jtl'
+  discard-paths: no
